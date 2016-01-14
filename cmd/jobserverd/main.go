@@ -60,7 +60,7 @@ var (
 	app      = kingpin.New("jobserverd", "Job server using SQLite as a backend.")
 	dbPath   = app.Flag("db_path", "Path to SQLite database.").Default("jobs.db").Envar("DB_PATH").String()
 	addr     = app.Flag("addr", "Address to listen on.").Default(":2097").Envar("ADDR").String()
-	logLevel = app.Flag("log_level", "Log level").Default("info").Enum("debug", "info", "warn", "error")
+	logLevel = app.Flag("log_level", "Log level").Default("info").Envar("LOG_LEVEL").Enum("debug", "info", "warn", "error")
 )
 
 func main() {
