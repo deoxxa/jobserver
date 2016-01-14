@@ -24,6 +24,7 @@ var (
 	putCommandTTR       = putCommand.Flag("ttr", "Time-to-run for the job.").Default("5m").Duration()
 	reserveCommand      = app.Command("reserve", "Try to reserve a job from a queue.")
 	reserveCommandQueue = reserveCommand.Arg("queue", "Queue to try to reserve a job from.").Required().String()
+	reserveCommandWait  = reserveCommand.Flag("wait", "Wait for a job to become available.").Bool()
 	deleteCommand       = app.Command("delete", "Delete a job.")
 	deleteCommandID     = deleteCommand.Arg("id", "Identifier of the job to delete.").Required().String()
 )
@@ -62,7 +63,14 @@ func main() {
 		}
 		fmt.Println(a)
 	case reserveCommand.FullCommand():
-		id, content, err := c.Reserve(*reserveCommandQueue)
+		var id, content string
+		var err error
+		if *reserveCommandWait {
+			id, content, err = c.ReserveWait(*reserveCommandQueue)
+		} else {
+			id, content, err = c.Reserve(*reserveCommandQueue)
+		}
+
 		if err != nil {
 			if err == jobserver.ErrNoJobs {
 				fmt.Println("no jobs")
@@ -70,6 +78,7 @@ func main() {
 			}
 			panic(err)
 		}
+
 		fmt.Println(id)
 		fmt.Println(content)
 	case deleteCommand.FullCommand():

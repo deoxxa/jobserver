@@ -157,6 +157,20 @@ func (c *Client) Reserve(queue string) (string, string, error) {
 	}
 }
 
+func (c *Client) ReserveWait(queue string) (string, string, error) {
+	for {
+		id, content, err := c.Reserve(queue)
+		switch err {
+		case nil:
+			return id, content, nil
+		case ErrNoJobs:
+			time.Sleep(time.Second)
+		default:
+			return "", "", err
+		}
+	}
+}
+
 func (c *Client) Delete(id string) (bool, error) {
 	r, err := c.req(&protocol.DeleteMessage{ID: id}, time.Second)
 	if err != nil {
