@@ -25,7 +25,10 @@ var (
 	reserveCommand      = app.Command("reserve", "Try to reserve a job from a queue.")
 	reserveCommandQueue = reserveCommand.Arg("queue", "Queue to try to reserve a job from.").Required().String()
 	reserveCommandWait  = reserveCommand.Flag("wait", "Wait for a job to become available.").Bool()
+	peekCommand         = app.Command("peek", "Try to peek a job from a queue.")
+	peekCommandQueue    = peekCommand.Arg("queue", "Queue to try to peek a job from.").Required().String()
 	deleteCommand       = app.Command("delete", "Delete a job.")
+	deleteCommandQueue  = deleteCommand.Arg("queue", "Queue from which to delete a job.").Required().String()
 	deleteCommandID     = deleteCommand.Arg("id", "Identifier of the job to delete.").Required().String()
 )
 
@@ -57,18 +60,16 @@ func main() {
 			holdUntil = holdUntil.Add(*putCommandHoldFor)
 		}
 
-		a, err := c.Put(*putCommandQueue, *putCommandID, *putCommandContent, *putCommandPriority, holdUntil, *putCommandTTR)
-		if err != nil {
+		if err := c.Put(*putCommandQueue, *putCommandID, *putCommandContent, *putCommandPriority, holdUntil, *putCommandTTR); err != nil {
 			panic(err)
 		}
-		fmt.Println(a)
 	case reserveCommand.FullCommand():
-		var id, content string
+		var j *jobserver.Job
 		var err error
 		if *reserveCommandWait {
-			id, content, err = c.ReserveWait(*reserveCommandQueue)
+			j, err = c.ReserveWait(*reserveCommandQueue)
 		} else {
-			id, content, err = c.Reserve(*reserveCommandQueue)
+			j, err = c.Reserve(*reserveCommandQueue)
 		}
 
 		if err != nil {
@@ -79,13 +80,27 @@ func main() {
 			panic(err)
 		}
 
-		fmt.Println(id)
-		fmt.Println(content)
-	case deleteCommand.FullCommand():
-		existed, err := c.Delete(*deleteCommandID)
+		fmt.Printf("[%s] %#v %s %s\n", j.Queue, j.Priority, j.TTR, j.ID)
+		fmt.Println(j.Content)
+	case peekCommand.FullCommand():
+		j, err := c.Peek(*peekCommandQueue)
 		if err != nil {
+			if err == jobserver.ErrNoJobs {
+				fmt.Println("no jobs")
+				return
+			}
 			panic(err)
 		}
-		fmt.Printf("existed: %v\n", existed)
+
+		fmt.Printf("[%s] %#v %s %s\n", j.Queue, j.Priority, j.TTR, j.ID)
+		fmt.Println(j.Content)
+	case deleteCommand.FullCommand():
+		if err := c.Delete(*deleteCommandQueue, *deleteCommandID); err != nil {
+			if err == jobserver.ErrNotFound {
+				fmt.Println("not found")
+				return
+			}
+			panic(err)
+		}
 	}
 }

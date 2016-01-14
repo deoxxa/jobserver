@@ -12,14 +12,13 @@ type (
 )
 
 var DefaultParser = NewParser(map[string]func() Message{
-	"ping":           func() Message { return &PingMessage{} },
-	"put":            func() Message { return &PutMessage{} },
-	"queued":         func() Message { return &QueuedMessage{} },
-	"reserve":        func() Message { return &ReserveMessage{} },
-	"reserved":       func() Message { return &ReservedMessage{} },
-	"reserve_failed": func() Message { return &ReserveFailedMessage{} },
-	"delete":         func() Message { return &DeleteMessage{} },
-	"deleted":        func() Message { return &DeletedMessage{} },
+	"delete":  func() Message { return &DeleteMessage{} },
+	"error":   func() Message { return &ErrorMessage{} },
+	"job":     func() Message { return &JobMessage{} },
+	"peek":    func() Message { return &PeekMessage{} },
+	"ping":    func() Message { return &PingMessage{} },
+	"reserve": func() Message { return &ReserveMessage{} },
+	"success": func() Message { return &SuccessMessage{} },
 })
 
 func Parse(d []byte) (Message, error) {

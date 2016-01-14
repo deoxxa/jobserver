@@ -18,9 +18,19 @@ type (
 )
 
 var (
-	ErrTimeout = fmt.Errorf("timed out")
-	ErrNoJobs  = fmt.Errorf("no jobs")
+	ErrTimeout  = errors.New("timed out")
+	ErrNoJobs   = errors.New("no jobs")
+	ErrNotFound = errors.New("not found")
 )
+
+type Job struct {
+	ID        string
+	Queue     string
+	Priority  float64
+	HoldUntil time.Time
+	TTR       time.Duration
+	Content   string
+}
 
 type Client struct {
 	m       sync.RWMutex
@@ -115,8 +125,8 @@ func (c *Client) Ping() (time.Duration, error) {
 	return time.Now().Sub(before), nil
 }
 
-func (c *Client) Put(queue, id, content string, priority float64, holdUntil time.Time, ttr time.Duration) (string, error) {
-	m := protocol.PutMessage{
+func (c *Client) Put(queue, id, content string, priority float64, holdUntil time.Time, ttr time.Duration) error {
+	m := protocol.JobMessage{
 		Queue:     queue,
 		ID:        id,
 		Priority:  priority,
@@ -127,60 +137,100 @@ func (c *Client) Put(queue, id, content string, priority float64, holdUntil time
 
 	r, err := c.req(&m, time.Second)
 	if err != nil {
-		return "", err
+		return err
 	}
 
 	switch r := r.(type) {
-	case *protocol.QueuedMessage:
-		return r.Action, nil
+	case *protocol.SuccessMessage:
+		return nil
+	case *protocol.ErrorMessage:
+		return errors.New(r.Reason)
 	default:
-		return "", ErrUnhandledType(fmt.Errorf("can't handle message type %T", r))
+		return ErrUnhandledType(fmt.Errorf("can't handle message type %T", r))
 	}
 }
 
-func (c *Client) Reserve(queue string) (string, string, error) {
+func (c *Client) Reserve(queue string) (*Job, error) {
 	r, err := c.req(&protocol.ReserveMessage{Queue: queue}, time.Second)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
 	switch r := r.(type) {
-	case *protocol.ReservedMessage:
-		return r.ID, r.Content, nil
-	case *protocol.ReserveFailedMessage:
+	case *protocol.JobMessage:
+		return &Job{
+			ID:        r.ID,
+			Queue:     r.Queue,
+			Priority:  r.Priority,
+			HoldUntil: time.Unix(r.HoldUntil, 0),
+			TTR:       time.Duration(r.TTR) * time.Second,
+			Content:   r.Content,
+		}, nil
+	case *protocol.ErrorMessage:
 		if r.Reason == "empty" {
-			return "", "", ErrNoJobs
+			return nil, ErrNoJobs
 		}
-		return "", "", errors.New(r.Reason)
+		return nil, errors.New(r.Reason)
 	default:
-		return "", "", ErrUnhandledType(fmt.Errorf("can't handle message type %T", r))
+		return nil, ErrUnhandledType(fmt.Errorf("can't handle message type %T", r))
 	}
 }
 
-func (c *Client) ReserveWait(queue string) (string, string, error) {
+func (c *Client) ReserveWait(queue string) (*Job, error) {
 	for {
-		id, content, err := c.Reserve(queue)
+		j, err := c.Reserve(queue)
 		switch err {
 		case nil:
-			return id, content, nil
+			return j, nil
 		case ErrNoJobs:
 			time.Sleep(time.Second)
 		default:
-			return "", "", err
+			return nil, err
 		}
 	}
 }
 
-func (c *Client) Delete(id string) (bool, error) {
-	r, err := c.req(&protocol.DeleteMessage{ID: id}, time.Second)
+func (c *Client) Peek(queue string) (*Job, error) {
+	r, err := c.req(&protocol.PeekMessage{Queue: queue}, time.Second)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	switch r := r.(type) {
-	case *protocol.DeletedMessage:
-		return r.Existed, nil
+	case *protocol.JobMessage:
+		return &Job{
+			ID:        r.ID,
+			Queue:     r.Queue,
+			Priority:  r.Priority,
+			HoldUntil: time.Unix(r.HoldUntil, 0),
+			TTR:       time.Duration(r.TTR) * time.Second,
+			Content:   r.Content,
+		}, nil
+	case *protocol.ErrorMessage:
+		if r.Reason == "empty" {
+			return nil, ErrNoJobs
+		}
+		return nil, errors.New(r.Reason)
 	default:
-		return false, ErrUnhandledType(fmt.Errorf("can't handle message type %T", r))
+		return nil, ErrUnhandledType(fmt.Errorf("can't handle message type %T", r))
+	}
+}
+
+func (c *Client) Delete(queue, id string) error {
+	r, err := c.req(&protocol.DeleteMessage{Queue: queue, ID: id}, time.Second)
+	if err != nil {
+		return err
+	}
+
+	switch r := r.(type) {
+	case *protocol.SuccessMessage:
+		return nil
+	case *protocol.ErrorMessage:
+		if r.Reason == "not found" {
+			return ErrNotFound
+		}
+		return errors.New(r.Reason)
+	default:
+		return ErrUnhandledType(fmt.Errorf("can't handle message type %T", r))
 	}
 }

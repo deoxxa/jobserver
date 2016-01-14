@@ -18,10 +18,10 @@ var (
 	createTableQuery = `create table if not exists "jobs" ("id" text primary key, "queue" text not null, "priority" float not null, "hold_until" integer not null, "ttr" integer, "content" text not null)`
 	fetchJobQuery    = `select "queue", "priority", "hold_until", "ttr", "content" from "jobs" where "id" = ?`
 	putJobQuery      = `insert into "jobs" ("id", "queue", "priority", "hold_until", "ttr", "content") values (?, ?, ?, ?, ?, ?)`
-	getJobQuery      = `select "id", "content" from "jobs" where "queue" = ? and "hold_until" < ? order by "priority" desc limit 1`
+	getTopJobQuery   = `select "id", "queue", "priority", "hold_until", "ttr", "content" from "jobs" where "queue" = ? and "hold_until" < ? order by "priority" desc limit 1`
 	reserveJobQuery  = `update "jobs" set "hold_until" = ? + "ttr" where "id" = ?`
 	updateJobQuery   = `update "jobs" set "priority" = ?, "hold_until" = ?, "ttr" = ? where "id" = ?`
-	deleteJobQuery   = `delete from "jobs" where "id" = ?`
+	deleteJobQuery   = `delete from "jobs" where "queue" = ? and "id" = ?`
 	listQueuesQuery  = `select distinct "queue" from "jobs"`
 	queueStatsQuery  = `select "queue", count(1) as "count" from "jobs" group by "queue"`
 )
@@ -147,7 +147,7 @@ func main() {
 				if _, err := s.WriteTo(m.Serialise(), r); err != nil {
 					panic(err)
 				}
-			case *protocol.PutMessage:
+			case *protocol.JobMessage:
 				maybePanic(withTx(db, func(tx *sql.Tx) error {
 					if m.HoldUntil == 0 {
 						m.HoldUntil = time.Now().Unix()
@@ -173,7 +173,7 @@ func main() {
 							return err
 						}
 
-						d := protocol.Serialise(&protocol.QueuedMessage{Key: m.Key, Action: "created"})
+						d := protocol.Serialise(&protocol.SuccessMessage{Key: m.Key})
 						if _, err := s.WriteTo(d, r); err != nil {
 							return err
 						}
@@ -186,7 +186,7 @@ func main() {
 							return err
 						}
 
-						d := protocol.Serialise(&protocol.QueuedMessage{Key: m.Key, Action: "updated"})
+						d := protocol.Serialise(&protocol.SuccessMessage{Key: m.Key})
 						if _, err := s.WriteTo(d, r); err != nil {
 							return err
 						}
@@ -196,10 +196,13 @@ func main() {
 				}))
 			case *protocol.ReserveMessage:
 				maybePanic(withTx(db, func(tx *sql.Tx) error {
-					var id, content string
-					if err := tx.QueryRow(getJobQuery, m.Queue, time.Now().Unix()).Scan(&id, &content); err != nil {
+					var id, queue, content string
+					var priority float64
+					var holdUntil int64
+					var ttr uint64
+					if err := tx.QueryRow(getTopJobQuery, m.Queue, time.Now().Unix()).Scan(&id, &queue, &priority, &holdUntil, &ttr, &content); err != nil {
 						if err == sql.ErrNoRows {
-							d := protocol.Serialise(&protocol.ReserveFailedMessage{Key: m.Key, Reason: "empty"})
+							d := protocol.Serialise(&protocol.ErrorMessage{Key: m.Key, Reason: "empty"})
 							if _, werr := s.WriteTo(d, r); werr != nil {
 								return werr
 							}
@@ -214,7 +217,33 @@ func main() {
 						return err
 					}
 
-					d := protocol.Serialise(&protocol.ReservedMessage{Key: m.Key, ID: id, Content: content})
+					d := protocol.Serialise(&protocol.JobMessage{Key: m.Key, ID: id, Queue: queue, Priority: priority, HoldUntil: holdUntil, TTR: ttr, Content: content})
+					if _, err := s.WriteTo(d, r); err != nil {
+						return err
+					}
+
+					return nil
+				}))
+			case *protocol.PeekMessage:
+				maybePanic(withTx(db, func(tx *sql.Tx) error {
+					var id, queue, content string
+					var priority float64
+					var holdUntil int64
+					var ttr uint64
+					if err := tx.QueryRow(getTopJobQuery, m.Queue, time.Now().Unix()).Scan(&id, &queue, &priority, &holdUntil, &ttr, &content); err != nil {
+						if err == sql.ErrNoRows {
+							d := protocol.Serialise(&protocol.ErrorMessage{Key: m.Key, Reason: "empty"})
+							if _, werr := s.WriteTo(d, r); werr != nil {
+								return werr
+							}
+
+							return nil
+						}
+
+						return err
+					}
+
+					d := protocol.Serialise(&protocol.JobMessage{Key: m.Key, ID: id, Queue: queue, Priority: priority, HoldUntil: holdUntil, TTR: ttr, Content: content})
 					if _, err := s.WriteTo(d, r); err != nil {
 						return err
 					}
@@ -223,7 +252,7 @@ func main() {
 				}))
 			case *protocol.DeleteMessage:
 				maybePanic(withTx(db, func(tx *sql.Tx) error {
-					qr, err := db.Exec(deleteJobQuery, m.ID)
+					qr, err := db.Exec(deleteJobQuery, m.Queue, m.ID)
 					if err != nil {
 						return err
 					}
@@ -233,9 +262,16 @@ func main() {
 						return err
 					}
 
-					d := protocol.Serialise(&protocol.DeletedMessage{Key: m.Key, Existed: n != 0})
-					if _, err := s.WriteTo(d, r); err != nil {
-						return err
+					if n == 0 {
+						d := protocol.Serialise(&protocol.ErrorMessage{Key: m.Key, Reason: "not found"})
+						if _, err := s.WriteTo(d, r); err != nil {
+							return err
+						}
+					} else {
+						d := protocol.Serialise(&protocol.SuccessMessage{Key: m.Key})
+						if _, err := s.WriteTo(d, r); err != nil {
+							return err
+						}
 					}
 
 					return nil
