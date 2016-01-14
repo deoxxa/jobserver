@@ -12,3 +12,7 @@ jobserverd: $(JOBSERVERD_SOURCES)
 
 clean:
 	rm -rf jobserverc jobserverd
+
+docker:
+	[ ! -z "$(TAG)" ] || false
+	docker build -t jobserverd:$(TAG) .
