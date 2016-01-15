@@ -1,4 +1,4 @@
-package jobserver
+package jobserver // import "fknsrs.biz/p/jobserver"
 
 import (
 	"crypto/rand"

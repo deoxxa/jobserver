@@ -1,4 +1,4 @@
-package main
+package main // import "fknsrs.biz/p/jobserver/cmd/jobserverc"
 
 import (
 	"fmt"

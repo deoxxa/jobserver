@@ -1,4 +1,4 @@
-package main
+package main // import "fknsrs.biz/p/jobserver/cmd/jobserverd"
 
 import (
 	"bytes"

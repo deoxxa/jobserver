@@ -1,4 +1,4 @@
-package protocol
+package protocol // import "fknsrs.biz/p/jobserver/internal/protocol"
 
 import (
 	"bytes"
