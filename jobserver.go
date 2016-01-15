@@ -39,6 +39,7 @@ type Client struct {
 	remote  net.Addr
 	pending map[string]chan protocol.Message
 	timeout time.Duration
+	retries int
 }
 
 func Dial(addr string) (*Client, error) {
@@ -77,13 +78,12 @@ func (c *Client) run() {
 			continue
 		}
 
-		c.m.Lock()
+		c.m.RLock()
 		ch, ok := c.pending[m.GetKey()]
+		c.m.RUnlock()
 		if ok {
-			delete(c.pending, m.GetKey())
 			ch <- m
 		}
-		c.m.Unlock()
 	}
 }
 
@@ -91,6 +91,8 @@ func (c *Client) req(m protocol.Message) (protocol.Message, error) {
 	if c.err != nil {
 		return nil, c.err
 	}
+
+	retries := c.retries
 
 	if m.GetKey() == "" {
 		d := make([]byte, 8)
@@ -106,20 +108,36 @@ func (c *Client) req(m protocol.Message) (protocol.Message, error) {
 	c.pending[m.GetKey()] = ch
 	c.m.Unlock()
 
-	if _, err := c.socket.Write(protocol.Serialise(m)); err != nil {
-		return nil, err
-	}
+	defer func() {
+		c.m.Lock()
+		delete(c.pending, m.GetKey())
+		c.m.Unlock()
+	}()
 
-	select {
-	case r := <-ch:
-		return r, nil
-	case <-time.After(c.timeout):
-		return nil, ErrTimeout
+	for {
+		if _, err := c.socket.Write(protocol.Serialise(m)); err != nil {
+			return nil, err
+		}
+
+		select {
+		case r := <-ch:
+			return r, nil
+		case <-time.After(c.timeout):
+			if retries == 0 {
+				return nil, ErrTimeout
+			}
+
+			retries--
+		}
 	}
 }
 
 func (c *Client) SetTimeout(t time.Duration) {
 	c.timeout = t
+}
+
+func (c *Client) SetRetries(n int) {
+	c.retries = n
 }
 
 func (c *Client) Ping() (time.Duration, error) {
