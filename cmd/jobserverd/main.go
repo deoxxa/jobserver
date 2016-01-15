@@ -183,6 +183,7 @@ func main() {
 						}
 
 						l.WithFields(logrus.Fields{
+							"queue":               m.Queue,
 							"job_id":              m.ID,
 							"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
 						}).Info("created job")
@@ -201,6 +202,7 @@ func main() {
 						}
 
 						l.WithFields(logrus.Fields{
+							"queue":               m.Queue,
 							"job_id":              m.ID,
 							"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
 						}).Info("updated job")
@@ -237,6 +239,7 @@ func main() {
 					}
 
 					l.WithFields(logrus.Fields{
+						"queue":               m.Queue,
 						"job_id":              id,
 						"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
 					}).Info("dispatched job")
@@ -294,6 +297,7 @@ func main() {
 					}
 
 					l.WithFields(logrus.Fields{
+						"queue":               m.Queue,
 						"job_id":              m.ID,
 						"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
 					}).Info("deleted job")
