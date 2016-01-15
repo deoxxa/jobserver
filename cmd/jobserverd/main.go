@@ -182,7 +182,10 @@ func main() {
 							return err
 						}
 
-						l.WithField("job_id", m.ID).Info("created job")
+						l.WithFields(logrus.Fields{
+							"job_id":              m.ID,
+							"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
+						}).Info("created job")
 					} else {
 						if m.HoldUntil > holdUntil {
 							m.HoldUntil = holdUntil
@@ -197,7 +200,10 @@ func main() {
 							return err
 						}
 
-						l.WithField("job_id", m.ID).Info("updated job")
+						l.WithFields(logrus.Fields{
+							"job_id":              m.ID,
+							"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
+						}).Info("updated job")
 					}
 
 					return nil
@@ -230,7 +236,10 @@ func main() {
 						return err
 					}
 
-					l.Info("dispatched job")
+					l.WithFields(logrus.Fields{
+						"job_id":              id,
+						"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
+					}).Info("dispatched job")
 
 					return nil
 				}))
@@ -284,7 +293,10 @@ func main() {
 						}
 					}
 
-					l.Info("deleted job")
+					l.WithFields(logrus.Fields{
+						"job_id":              m.ID,
+						"measure#duration_ms": time.Now().Sub(before).Seconds() * 1000,
+					}).Info("deleted job")
 
 					return nil
 				}))
