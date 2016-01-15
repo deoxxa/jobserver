@@ -110,6 +110,8 @@ func main() {
 			panic(err)
 		}
 
+		before := time.Now()
+
 		mnum := snum
 		snum++
 
@@ -121,6 +123,8 @@ func main() {
 
 		func() {
 			defer func() {
+				l := l.WithField("duration", time.Now().Sub(before))
+
 				if e := recover(); e != nil {
 					if err, ok := e.(error); ok {
 						l.WithField("error", err.Error()).Error("error processing message")
