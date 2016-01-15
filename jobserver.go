@@ -38,6 +38,7 @@ type Client struct {
 	socket  *net.UDPConn
 	remote  net.Addr
 	pending map[string]chan protocol.Message
+	timeout time.Duration
 }
 
 func Dial(addr string) (*Client, error) {
@@ -55,6 +56,7 @@ func Dial(addr string) (*Client, error) {
 		socket:  s,
 		remote:  raddr,
 		pending: make(map[string]chan protocol.Message),
+		timeout: time.Second,
 	}
 
 	go c.run()
@@ -85,7 +87,7 @@ func (c *Client) run() {
 	}
 }
 
-func (c *Client) req(m protocol.Message, timeout time.Duration) (protocol.Message, error) {
+func (c *Client) req(m protocol.Message) (protocol.Message, error) {
 	if c.err != nil {
 		return nil, c.err
 	}
@@ -111,14 +113,18 @@ func (c *Client) req(m protocol.Message, timeout time.Duration) (protocol.Messag
 	select {
 	case r := <-ch:
 		return r, nil
-	case <-time.After(timeout):
+	case <-time.After(c.timeout):
 		return nil, ErrTimeout
 	}
 }
 
+func (c *Client) SetTimeout(t time.Duration) {
+	c.timeout = t
+}
+
 func (c *Client) Ping() (time.Duration, error) {
 	before := time.Now()
-	if _, err := c.req(&protocol.PingMessage{}, time.Second); err != nil {
+	if _, err := c.req(&protocol.PingMessage{}); err != nil {
 		return 0, err
 	}
 
@@ -135,7 +141,7 @@ func (c *Client) Put(queue, id, content string, priority float64, holdUntil time
 		Content:   content,
 	}
 
-	r, err := c.req(&m, time.Second)
+	r, err := c.req(&m)
 	if err != nil {
 		return err
 	}
@@ -151,7 +157,7 @@ func (c *Client) Put(queue, id, content string, priority float64, holdUntil time
 }
 
 func (c *Client) Reserve(queue string) (*Job, error) {
-	r, err := c.req(&protocol.ReserveMessage{Queue: queue}, time.Second)
+	r, err := c.req(&protocol.ReserveMessage{Queue: queue})
 	if err != nil {
 		return nil, err
 	}
@@ -191,7 +197,7 @@ func (c *Client) ReserveWait(queue string) (*Job, error) {
 }
 
 func (c *Client) Peek(queue string) (*Job, error) {
-	r, err := c.req(&protocol.PeekMessage{Queue: queue}, time.Second)
+	r, err := c.req(&protocol.PeekMessage{Queue: queue})
 	if err != nil {
 		return nil, err
 	}
@@ -217,7 +223,7 @@ func (c *Client) Peek(queue string) (*Job, error) {
 }
 
 func (c *Client) Delete(queue, id string) error {
-	r, err := c.req(&protocol.DeleteMessage{Queue: queue, ID: id}, time.Second)
+	r, err := c.req(&protocol.DeleteMessage{Queue: queue, ID: id})
 	if err != nil {
 		return err
 	}
