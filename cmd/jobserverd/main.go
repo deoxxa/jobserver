@@ -115,15 +115,16 @@ func main() {
 		mnum := snum
 		snum++
 
-		l := logrus.WithField("mnum", mnum)
+		l := logrus.WithField("seq", mnum)
 
-		l = l.WithField("remote", r.String())
-
-		l.WithField("size", n).Debug("got message")
+		l.WithFields(logrus.Fields{
+			"size":   n,
+			"remote": r.String(),
+		}).Debug("got message")
 
 		func() {
 			defer func() {
-				l := l.WithField("duration", time.Now().Sub(before))
+				l := l.WithField("measure#duration", time.Now().Sub(before).Seconds()*1000)
 
 				if e := recover(); e != nil {
 					if err, ok := e.(error); ok {
@@ -141,10 +142,9 @@ func main() {
 				panic(err)
 			}
 
-			l = l.WithField("message_type", fmt.Sprintf("%T", m))
 			l = l.WithField("message_key", m.GetKey())
 
-			l.Debug("processing message")
+			l.WithField("message_type", fmt.Sprintf("%T", m)).Debug("processing message")
 
 			switch m := m.(type) {
 			case *protocol.PingMessage:
@@ -181,6 +181,8 @@ func main() {
 						if _, err := s.WriteTo(d, r); err != nil {
 							return err
 						}
+
+						l.WithField("job_id", m.ID).Info("created job")
 					} else {
 						if m.HoldUntil > holdUntil {
 							m.HoldUntil = holdUntil
@@ -194,6 +196,8 @@ func main() {
 						if _, err := s.WriteTo(d, r); err != nil {
 							return err
 						}
+
+						l.WithField("job_id", m.ID).Info("updated job")
 					}
 
 					return nil
@@ -225,6 +229,8 @@ func main() {
 					if _, err := s.WriteTo(d, r); err != nil {
 						return err
 					}
+
+					l.Info("dispatched job")
 
 					return nil
 				}))
@@ -277,6 +283,8 @@ func main() {
 							return err
 						}
 					}
+
+					l.Info("deleted job")
 
 					return nil
 				}))
